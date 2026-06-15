@@ -33,9 +33,22 @@ jobs:
           # Get PR version
           cp waict-integrity.md preview/pr.md
 
-          # Convert both to HTML (marked needs -i/-o; it reads stdin otherwise)
-          npx --yes marked -i preview/base.md -o preview/base.html
-          npx --yes marked -i preview/pr.md -o preview/pr.html
+          # Install marked once, then use its JS API directly (avoids CLI arg-parsing issues entirely)
+          npm install --no-save marked
+
+          node -e "
+            const fs = require('fs');
+            const { marked } = require('marked');
+            const md = fs.readFileSync(process.argv[1], 'utf8');
+            fs.writeFileSync(process.argv[2], marked.parse(md));
+          " preview/base.md preview/base.html
+
+          node -e "
+            const fs = require('fs');
+            const { marked } = require('marked');
+            const md = fs.readFileSync(process.argv[1], 'utf8');
+            fs.writeFileSync(process.argv[2], marked.parse(md));
+          " preview/pr.md preview/pr.html
 
           # Template for the side-by-side comparison, with placeholders
           cat > preview/template.html << 'EOF'
@@ -68,7 +81,6 @@ jobs:
           </html>
           EOF
 
-          # Inline the rendered HTML into the template (avoids fetch()/CORS issues on file://)
           node -e "
             const fs = require('fs');
             let template = fs.readFileSync('preview/template.html', 'utf8');
