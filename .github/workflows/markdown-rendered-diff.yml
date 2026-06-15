@@ -12,41 +12,57 @@ jobs:
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}
-
       - name: Build rendered Markdown diff
         shell: bash
         run: |
+          set -e
           mkdir -p preview
 
-          # Get base version (from main branch)
-          git show origin/${{ github.base_ref }}:waict-integrity.md > preview/base.md 2>/dev/null || echo "# Base file not found" > preview/base.md
+          # Try to get base version, handle gracefully if it doesn't exist
+          if git show "origin/${{ github.base_ref }}:waict-integrity.md" > preview/base.md 2>/dev/null; then
+            echo "✓ Found base version in ${{ github.base_ref }}"
+          else
+            echo "✓ Base file not in ${{ github.base_ref }}, showing PR version only"
+            # Create a placeholder to indicate there's no base
+            echo "# NEW FILE" > preview/base.md
+          fi
 
-          # Get PR version (current branch)
+          # Get PR version
           cp waict-integrity.md preview/pr.md
 
-          # Convert both to HTML
+          # Convert to HTML
+          echo "Converting markdown to HTML..."
           npx --yes marked preview/base.md -o preview/base.html
           npx --yes marked preview/pr.md -o preview/pr.html
 
-          # Generate HTML diff
+          # Generate diff
+          echo "Generating diff..."
           git diff --no-index preview/base.html preview/pr.html > preview/rendered.diff || true
+
+          # Create side-by-side HTML
           npx --yes diff2html-cli -i file -s side -F preview/rendered-diff.html -- preview/rendered.diff
 
-      - name: Upload rendered diff
+          echo "✓ Diff generated successfully"
+          ls -lh preview/
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rendered-markdown-diff
-          path: preview/rendered-diff.html
+          name: markdown-diff
+          path: preview/
 
-      - name: Comment with preview link
+      - name: Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
@@ -54,5 +70,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '📄 **Rendered Markdown Preview**\n\n[Download the side-by-side diff](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) from Artifacts → `rendered-markdown-diff`'
+              body: '📄 **Rendered Markdown Diff Ready**\n\nDownload `markdown-diff` artifact from the [Actions tab](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) and open `rendered-diff.html` in your browser to see the side-by-side comparison.'
             })
