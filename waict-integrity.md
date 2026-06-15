@@ -1,5 +1,7 @@
 # WAICT - Signalling and Integrity
 
+cat cat chat
+
 Web Application Integrity, Consistency, and Transparency (WAICT) enables websites to opt-in to a stronger security model which provides enhanced security for user-agents. When a website has opted in to WAICT, user-agents can be assured that web applications served by the website have been publicly logged with a transparency service.
 
 This enables third parties to inspect the web application served to user-agents and so mitigate the risk of a compromised website serving malicious code. This security guarantee is particularly important for threat models where the server is not trusted by the user-agent, for example, in End-to-End Encrypted messaging.
