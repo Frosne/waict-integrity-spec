@@ -12,41 +12,47 @@ jobs:
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+
       - name: Build rendered Markdown diff
         shell: bash
         run: |
-          set -e
-
           mkdir -p preview
 
-          git fetch origin "${{ github.base_ref }}"
+          # Get base version (from main branch)
+          git show origin/${{ github.base_ref }}:waict-integrity.md > preview/base.md 2>/dev/null || echo "# Base file not found" > preview/base.md
 
-          git show "origin/${{ github.base_ref }}:waict-integrity.md" > preview/base.md
+          # Get PR version (current branch)
           cp waict-integrity.md preview/pr.md
 
-          npx --yes marked-cli preview/base.md -o preview/base.html
-          npx --yes marked-cli preview/pr.md -o preview/pr.html
+          # Convert both to HTML
+          npx --yes marked preview/base.md -o preview/base.html
+          npx --yes marked preview/pr.md -o preview/pr.html
 
+          # Generate HTML diff
           git diff --no-index preview/base.html preview/pr.html > preview/rendered.diff || true
+          npx --yes diff2html-cli -i file -s side -F preview/rendered-diff.html -- preview/rendered.diff
 
-          npx --yes diff2html-cli \
-            -i file \
-            -s side \
-            -F preview/rendered-diff.html \
-            -- preview/rendered.diff
-
-          test -f preview/rendered-diff.html
-
-      - name: Upload rendered diff artifact
+      - name: Upload rendered diff
         uses: actions/upload-artifact@v4
         with:
           name: rendered-markdown-diff
-          path: preview/
+          path: preview/rendered-diff.html
+
+      - name: Comment with preview link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '📄 **Rendered Markdown Preview**\n\n[Download the side-by-side diff](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) from Artifacts → `rendered-markdown-diff`'
+            })
