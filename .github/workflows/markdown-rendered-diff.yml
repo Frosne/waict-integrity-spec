@@ -20,72 +20,102 @@ jobs:
         with:
           node-version: 20
 
-      - name: Generate preview
+      - name: Generate markdown preview
+        shell: bash
         run: |
           mkdir -p preview
           
-          # Fetch base branch
-          git fetch origin ${{ github.base_ref }} 2>/dev/null || true
-          
-          # Get base version
-          git show origin/${{ github.base_ref }}:waict-integrity.md > preview/base.md 2>/dev/null || echo "# NEW FILE" > preview/base.md
-          
-          # Get PR version
+          # Get the PR markdown
           cp waict-integrity.md preview/pr.md
           
-          # Convert both to HTML
-          npx --yes marked preview/base.md > preview/base.html
-          npx --yes marked preview/pr.md > preview/pr.html
+          # Try to get the base version
+          if git show origin/${{ github.base_ref }}:waict-integrity.md > preview/base.md 2>/dev/null && [ -s preview/base.md ]; then
+            echo "✓ Found base version"
+          else
+            echo "✓ Base version not found, showing PR as new file"
+            echo "# NEW FILE - No previous version to compare" > preview/base.md
+          fi
           
-          # Create simple HTML comparison
-          cat > preview/rendered-diff.html << 'EOF'
+          # Convert base to HTML
+          if [ -s preview/base.md ]; then
+            npx --yes marked preview/base.md > preview/base.html 2>/dev/null || echo "<p>Could not render base markdown</p>" > preview/base.html
+          fi
+          
+          # Convert PR to HTML
+          if [ -s preview/pr.md ]; then
+            npx --yes marked preview/pr.md > preview/pr.html 2>/dev/null || echo "<p>Could not render PR markdown</p>" > preview/pr.html
+          fi
+          
+          # Create comparison viewer
+          cat > preview/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
           <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Markdown Diff</title>
             <style>
-              body { font-family: sans-serif; margin: 20px; }
-              .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-              .section { border: 1px solid #ddd; padding: 20px; overflow: auto; max-height: 80vh; }
-              h1 { color: #333; border-bottom: 2px solid #007bff; }
-              .base { background: #f8f9fa; }
-              .pr { background: #fff; }
+              * { box-sizing: border-box; }
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f5f5f5; }
+              .header { background: #24292e; color: white; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+              .header h1 { margin: 0; font-size: 24px; }
+              .container { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: calc(100vh - 80px); }
+              .panel { overflow-y: auto; padding: 20px; border-right: 1px solid #ddd; }
+              .panel:last-child { border-right: none; }
+              .panel h2 { margin-top: 0; border-bottom: 3px solid #0366d6; padding-bottom: 10px; }
+              .base { background: #f6f8fa; }
+              .base h2 { color: #666; }
             </style>
           </head>
           <body>
-            <h1>📄 Markdown Diff Preview</h1>
+            <div class="header">
+              <h1>📄 Markdown Diff Preview</h1>
+            </div>
             <div class="container">
-              <div class="section base">
-                <h2>Base (main branch)</h2>
-                <div id="base-content"></div>
+              <div class="panel base">
+                <h2>Base (main)</h2>
+                <div id="base"></div>
               </div>
-              <div class="section pr">
+              <div class="panel">
                 <h2>PR Changes</h2>
-                <div id="pr-content"></div>
+                <div id="pr"></div>
               </div>
             </div>
             <script>
-              fetch('base.html').then(r => r.text()).then(t => document.getElementById('base-content').innerHTML = t);
-              fetch('pr.html').then(r => r.text()).then(t => document.getElementById('pr-content').innerHTML = t);
+              Promise.all([
+                fetch('base.html').then(r => r.text()),
+                fetch('pr.html').then(r => r.text())
+              ]).then(([base, pr]) => {
+                document.getElementById('base').innerHTML = base;
+                document.getElementById('pr').innerHTML = pr;
+              });
             </script>
           </body>
           </html>
           EOF
+          
+          echo "✓ Preview generated"
+          ls -lh preview/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: markdown-preview
           path: preview/
-          
+
       - name: Comment on PR
         uses: actions/github-script@v7
         if: always()
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ **Markdown Preview Generated**\n\nDownload the `markdown-preview` artifact from the Actions tab and open `rendered-diff.html` in your browser to see the side-by-side comparison of the rendered markdown.'
-            })
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '✅ Markdown preview generated!\n\n📥 **How to view:**\n1. Go to the "Actions" tab for this workflow run\n2. Download the `markdown-preview` artifact\n3. Extract it and open `index.html` in your browser\n\nYou\'ll see the rendered markdown side-by-side (base on left, PR changes on right)'
+              });
+            } catch (e) {
+              console.log('Comment create skipped');
+            }
