@@ -1,0 +1,41 @@
+name: Markdown rendered diff
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+
+jobs:
+  rendered-diff:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+
+      - name: Install tools
+        run: npm install -g marked-cli diff2html-cli
+
+      - name: Build rendered diff
+        run: |
+          mkdir -p preview
+
+          git show origin/${{ github.base_ref }}:waict-integrity.md > preview/base.md
+          cp waict-integrity.md preview/pr.md
+
+          marked preview/base.md -o preview/base.html
+          marked preview/pr.md -o preview/pr.html
+
+          git diff --no-index preview/base.html preview/pr.html > preview/rendered.diff || true
+          diff2html -i file -s side -F preview/rendered-diff.html -- preview/rendered.diff
+
+      - name: Upload rendered diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-markdown-diff
+          path: preview/
